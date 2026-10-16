@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="ro"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mafia 20</title>
+<style>
+:root{--bg:#e3e8eb;--panel:#f4f6f7;--ink:#1c2530;--mut:#62707c;--line:#c2ccd3;--mafia:#b3262e;--oras:#2f7d5b;--neutru:#b7791f;--btn:#1c2530;--btnt:#f4f6f7}
+body.night{--bg:#0e1727;--panel:#17233a;--ink:#dbe2ee;--mut:#8a98ad;--line:#2b3b58;--btn:#dbe2ee;--btnt:#0e1727}
+*{box-sizing:border-box}html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,sans-serif;transition:background .6s}
+h1,h2,h3,.big{font-family:"Palatino Linotype",Palatino,Georgia,serif;margin:0}
+button,input{font:inherit;color:inherit}
+button{background:var(--btn);color:var(--btnt);border:0;border-radius:4px;padding:8px 14px;cursor:pointer}
+button.alt{background:transparent;color:var(--ink);border:1px solid var(--line)}
+button:focus-visible,input:focus-visible,.pl:focus-visible{outline:2px solid var(--neutru);outline-offset:2px}
+input{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:9px 11px;width:100%}
+nav{display:flex;gap:6px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line)}
+nav .big{font-size:22px;margin-right:auto}
+nav .code{font-weight:700;letter-spacing:.15em}
+#timer{min-width:44px;text-align:right;font-variant-numeric:tabular-nums}
+.wrap{max-width:1100px;margin:0 auto;padding:16px}
+#home{max-width:380px;margin:8vh auto;display:grid;gap:10px}
+#home h1{font-size:44px}
+.grid{display:grid;grid-template-columns:260px 1fr 320px;gap:14px}
+@media(max-width:860px){.grid{grid-template-columns:1fr}}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px}
+.pls{display:grid;gap:5px}
+.pl{display:flex;justify-content:space-between;gap:8px;padding:7px 9px;border:1px solid var(--line);border-radius:4px;cursor:default}
+.pl.pick{cursor:pointer}.pl.pick:hover{border-color:var(--ink)}
+.pl.sel{background:var(--ink);color:var(--bg)}
+.pl.dead{opacity:.55;text-decoration:line-through}
+.tag{font-size:12px;border-left:3px solid;padding-left:6px}
+.tag.mafia{border-color:var(--mafia)}.tag.oras{border-color:var(--oras)}.tag.neutru{border-color:var(--neutru)}
+.role{border-left:6px solid;padding:4px 0 4px 12px;margin-bottom:10px}
+.role.mafia{border-color:var(--mafia)}.role.oras{border-color:var(--oras)}.role.neutru{border-color:var(--neutru)}
+.role h2{font-size:28px}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+#feed{height:340px;overflow:auto;display:flex;flex-direction:column;gap:4px;margin-bottom:8px}
+#feed div{padding:2px 0}.f-log{color:var(--mut)}.f-priv{border-left:3px solid var(--neutru);padding-left:8px!important;font-weight:600}
+.f-mafia{color:var(--mafia)}.f-dead{color:var(--mut);font-style:italic}
+.chat{display:flex;gap:6px}
+.rules h2{margin:22px 0 8px}.rules .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+.rules p,.rules li{max-width:70ch}
+[hidden]{display:none!important}
+@media(prefers-reduced-motion:reduce){body{transition:none}}
+</style></head><body>
+<nav><span class="big">Mafia 20</span><span class="code" id="rc"></span><span id="ph"></span><span id="timer"></span>
+<button class="alt" id="tg">Instrucțiuni</button></nav>
+<div id="err" class="wrap" style="color:var(--mafia)" hidden></div>
+<div id="home"><h1>Mafia 20</h1><p>Până la 20 de prieteni, toți cu rol activ. Creează o cameră și trimite codul de 4 litere.</p>
+<input id="name" placeholder="Numele tău" maxlength="16"><button id="mk">Creează cameră</button>
+<input id="code" placeholder="Cod cameră" maxlength="4"><button class="alt" id="jn">Intră în cameră</button></div>
+<div id="game" class="wrap" hidden><div class="grid">
+<section class="box"><h3>Jucători <span id="cnt"></span></h3><div class="pls" id="pls"></div></section>
+<section class="box" id="mid"></section>
+<section class="box"><div id="feed"></div><form class="chat" id="cf"><input id="ct" placeholder="Scrie în chat" maxlength="200" autocomplete="off"><button>Trimite</button></form></section>
+</div></div>
+<div id="rules" class="wrap rules" hidden></div>
+<script>
+const $=id=>document.getElementById(id),T=localStorage.mf_t||(localStorage.mf_t=Math.random().toString(36).slice(2));
+let ws,S=null,R={},MIN=5,end=0,showRules=false;
+const TN={mafia:'Mafia',oras:'Oraș',neutru:'Neutru'};
+function h(t,c,x){const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
+const tx=o=>ws&&ws.readyState===1&&ws.send(JSON.stringify(o));
+function connect(cb){
+ ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host);
+ ws.onopen=cb;
+ ws.onmessage=e=>{const m=JSON.parse(e.data);
+  if(m.t==='hello'){R=m.R;MIN=m.min;buildRules();}
+  else if(m.t==='err'){$('err').hidden=false;$('err').textContent=m.text;}
+  else if(m.t==='state'){$('err').hidden=true;S=m;end=Date.now()+m.left;render();}
+  else if(m.t==='log')add('f-log',m.text);
+  else if(m.t==='priv')add('f-priv','🔒 '+m.text);
+  else if(m.t==='chat')add('f-'+m.ch,(m.ch==='mafia'?'[Mafia] ':m.ch==='dead'?'[Morți] ':'')+m.from+': '+m.text);};
+ ws.onclose=()=>{if(S)setTimeout(()=>connect(()=>tx({t:'join',name:S.me.name,room:S.code,token:T})),1500);};
+}
+function add(c,t){const f=$('feed');f.append(h('div',c,t));f.scrollTop=f.scrollHeight;}
+function go(create){const name=$('name').value.trim();localStorage.mf_n=name;
+ const m={t:create?'create':'join',name,room:$('code').value,token:T};
+ if(ws&&ws.readyState===1)tx(m);else connect(()=>tx(m));}
+$('name').value=localStorage.mf_n||'';
+$('mk').onclick=()=>go(true);$('jn').onclick=()=>go(false);
+$('cf').onsubmit=e=>{e.preventDefault();const v=$('ct').value.trim();if(v)tx({t:'chat',text:v});$('ct').value='';};
+$('tg').onclick=()=>{showRules=!showRules;render();};
+connect(()=>{});
+function click(pl){
+ if(!S.me.alive)return;
+ if(S.phase==='night'&&S.me.can&&S.me.role!=='veteran')tx({t:'act',target:pl.id});
+ if(S.phase==='day'&&pl.id!==S.me.id)tx({t:'vote',target:pl.id});
+}
+function render(){
+ $('tg').textContent=showRules?'Înapoi la joc':'Instrucțiuni';
+ $('rules').hidden=!showRules;$('home').hidden=showRules||!!S;$('game').hidden=showRules||!S;
+ if(!S)return;
+ const me=S.me,ph=S.phase;
+ document.body.classList.toggle('night',ph==='night');
+ $('rc').textContent=S.code;$('ph').textContent={lobby:'Lobby',night:'Noaptea '+S.day,day:'Ziua '+S.day,ended:'Final'}[ph];
+ $('cnt').textContent='('+S.players.length+'/20)';
+ const act=ph==='night'&&me.can&&me.role!=='veteran',vote=ph==='day'&&me.alive;
+ const P=$('pls');P.replaceChildren();
+ S.players.forEach(pl=>{
+  const d=h('div','pl'+(pl.alive?'':' dead')+((act||vote)&&pl.alive&&(pl.id!==me.id||me.role==='doctor'&&act)?' pick':'')+((act&&me.picked===pl.id)||(vote&&me.voted===pl.id)?' sel':''));
+  d.append(h('span','',pl.name+(pl.host?' ★':'')+(pl.online?'':' (offline)')+(pl.id===me.id?' (tu)':'')));
+  const r=h('span','');if(pl.votes)r.textContent='🗳 '+pl.votes+' ';
+  if(pl.role){const t=h('span','tag '+R[pl.role].t,R[pl.role].n);r.append(t);}
+  d.append(r);d.onclick=()=>click(pl);P.append(d);
+ });
+ const M=$('mid');M.replaceChildren();
+ if(me.role){const r=R[me.role],b=h('div','role '+r.t);b.append(h('h2','',r.n),h('div','tag '+r.t,'Echipa: '+TN[r.t]),h('p','',r.d));
+  if(me.mates.length)b.append(h('p','','Echipa ta: '+me.mates.join(', ')));
+  if(me.uses!=null&&(me.role==='justitiar'||me.role==='veteran'))b.append(h('p','','Utilizări rămase: '+me.uses));M.append(b);}
+ const info=h('p');M.append(info);const row=h('div','row');M.append(row);
+ const nm=id=>(S.players.find(x=>x.id===id)||{}).name;
+ if(ph==='lobby'){info.textContent=S.players.length<MIN?`Mai e nevoie de cel puțin ${MIN} jucători. Trimite codul ${S.code} prietenilor.`:'Gata de start. Rolurile se împart automat în funcție de numărul de jucători.';
+  if(me.host){const b=h('button','','Începe jocul');b.onclick=()=>tx({t:'start'});row.append(b);}else info.textContent+=' Așteaptă gazda (★).';}
+ else if(ph==='night'){
+  if(!me.alive)info.textContent='Ești mort. Poți vorbi doar cu ceilalți morți.';
+  else if(me.can){info.textContent=R[me.role].l+(me.picked?' Alegere: '+nm(me.picked):' Alege din lista de jucători.');
+   if(me.role==='veteran'){const b=h('button','',me.picked?'Anulează alerta':'Intră în alertă');b.onclick=()=>tx({t:'act',target:me.picked?null:me.id});row.append(b);}
+   else{const b=h('button','alt','Nu fac nimic');b.onclick=()=>tx({t:'act',target:null});row.append(b);}}
+  else info.textContent=me.team==='mafia'?'Noapte. Discutați în chat cine moare.':'Noapte. Nu ai acțiune acum. Așteaptă dimineața.';}
+ else if(ph==='day'){
+  if(!me.alive)info.textContent='Ești mort. Poți urmări jocul și vorbi cu morții.';
+  else{info.textContent=me.voted?'Votul tău: '+nm(me.voted)+'.':me.voted===null?'Te-ai abținut.':'Discută, apoi apasă pe un jucător ca să votezi eliminarea lui. Jocul trece la noapte când votează toți sau expiră timpul.';
+   const b=h('button','alt','Mă abțin');b.onclick=()=>tx({t:'vote',target:null});row.append(b);
+   if(me.role==='primar'&&!me.revealed){const r=h('button','','Dezvăluie-te ca Primar');r.onclick=()=>tx({t:'reveal'});row.append(r);}}}
+ else{M.append(h('h2','','Câștigă: '+S.winner));if(S.jester)M.append(h('p','',S.jester+' (Bufonul) a câștigat și el.'));
+  info.textContent='Rolurile tuturor sunt acum vizibile în listă.';
+  if(me.host){const b=h('button','','Joacă din nou');b.onclick=()=>tx({t:'again'});row.append(b);}}
+}
+setInterval(()=>{$('timer').textContent=S&&end>Date.now()?Math.ceil((end-Date.now())/1000)+'s':'';},300);
+function buildRules(){
+ const X=$('rules');X.replaceChildren();
+ X.append(h('h1','','Instrucțiuni'));
+ const how=h('ul');
+ ['Jocul are două faze care se repetă: noaptea (40 s, acțiuni secrete) și ziua (100 s, discuție și vot).',
+ 'Noaptea fiecare rol activ alege o țintă. Mafia vorbește în privat în chat. Rezultatele secrete apar în chat cu 🔒.',
+ 'Ziua toți cei vii discută și votează pe cine elimină. Cine are cele mai multe voturi iese din joc (la egalitate nu iese nimeni). Rolul celui eliminat se vede.',
+ 'Mafia (≈30% din jucători) câștigă când are cel puțin cât toți ceilalți vii. Orașul câștigă când mafia și Ucigașul în serie au dispărut.',
+ 'Neutrii au scopuri proprii. Bufonul și Ucigașul pot câștiga chiar dacă echipele mari pierd.',
+ 'Ordinea de noapte: blocările se aplică primele, apoi protecțiile, apoi atacurile, apoi investigațiile. Un jucător blocat nu își folosește rolul.',
+ 'Distribuția: 20 jucători = 6 Mafie, 11 Oraș, 3 Neutri. La mai puțini jucători scad întâi rolurile mai slabe; Ucigașul apare de la 7 jucători, Bufonul de la 10, Moștenitorul de la 15.']
+ .forEach(t=>how.append(h('li','',t)));X.append(how);
+ ['mafia','oras','neutru'].forEach(t=>{X.append(h('h2','',TN[t]));const c=h('div','cards');
+  Object.values(R).filter(r=>r.t===t).forEach(r=>{const b=h('div','role '+t);b.append(h('h3','',r.n),h('p','',r.d));c.append(b);});X.append(c);});
+}
+</script></body></html>
